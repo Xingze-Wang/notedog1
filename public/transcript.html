@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="transcript-page">
+    <div class="status-bar">
+        <div id="time">16:59</div>
+        <div id="battery">100%</div>
+    </div>
+
+    <div class="header">
+        <div class="top-icons">
+            <span class="icon"><a href="http://localhost:3000" class="back-button">Back</a></span>
+            <div class="right-icons">
+                <span>Bell</span>
+                <span>Profile</span>
+                <span>Share</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="upcoming-section">
+        <h1 class="upcoming-title">Note</h1>
+        <div id="status">Ready to record</div>
+    </div>
+
+    <div class="meta-info">
+        <span>Created: <span id="created-time"></span></span>
+        <span>Duration: <span id="duration">0:00</span></span>
+        <span>Xingze Wang</span>
+    </div>
+
+    <div class="chat-input">
+        Ask NoteDog or @mention people
+    </div>
+
+    <div class="tabs">
+        <div class="tab">Summary</div>
+        <div class="tab active">Transcript</div>
+        <div class="tab">Comments</div>
+    </div>
+
+    <div class="transcript-area"></div>
+
+    <div class="bottom-bar">
+        <div class="record-button" id="recordButton"></div>
+    </div>
+
+    <script src="common.js"></script>
+    <script src="transcript.js"></script>
+</body>
+</html>
