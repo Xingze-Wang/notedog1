@@ -3,6 +3,12 @@ let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 let audio = null;
+let startTime;
+let liveTranscript;
+let finalTranscript;
+let status;
+let createdTime;
+let duration;
 
 async function initializePage() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -13,6 +19,48 @@ async function initializePage() {
     
     if (mode === 'playback' && id) {
         await loadRecording(id);
+    }
+    
+    if (mode === 'live') {
+        liveTranscript = document.getElementById('live-transcript');
+        finalTranscript = document.getElementById('final-transcript');
+        status = document.getElementById('status');
+        createdTime = document.getElementById('created-time');
+        duration = document.getElementById('duration');
+        
+        createdTime.textContent = new Date().toLocaleString();
+        
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                let finalTranscriptText = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscriptText += transcript + '\n';
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                liveTranscript.textContent = interimTranscript;
+                if (finalTranscriptText) {
+                    finalTranscript.innerHTML += finalTranscriptText;
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                status.textContent = 'Error: ' + event.error;
+            };
+        } else {
+            status.textContent = 'Speech recognition not supported';
+        }
     }
 }
 
@@ -69,6 +117,86 @@ function updateBottomBar(mode, id) {
         // Set up playback controls
         document.getElementById('playButton').addEventListener('click', togglePlayback);
         document.getElementById('stopButton').addEventListener('click', stopPlayback);
+    } else if (mode === 'live') {
+        bottomBar.innerHTML = `
+            <button id="startRecording" class="record-button">Start Recording</button>
+            <button id="stopRecording" class="record-button" disabled>Stop Recording</button>
+            <div id="status"></div>
+            <div id="created-time"></div>
+            <div id="duration">0:00</div>
+            <div id="live-transcript"></div>
+            <div id="final-transcript"></div>
+        `;
+        
+        document.getElementById('startRecording').addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                startTime = Date.now();
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob);
+                    formData.append('transcript', finalTranscript.textContent);
+                    formData.append('duration', duration.textContent);
+
+                    try {
+                        const response = await fetch('/api/recordings', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        if (response.ok) {
+                            window.location.href = '/';
+                        } else {
+                            status.textContent = 'Error saving recording';
+                        }
+                    } catch (error) {
+                        console.error('Error:', error);
+                        status.textContent = 'Error saving recording';
+                    }
+                };
+
+                mediaRecorder.start();
+                recognition.start();
+                
+                document.getElementById('startRecording').disabled = true;
+                document.getElementById('stopRecording').disabled = false;
+                status.textContent = 'Recording...';
+
+                // Update duration
+                const updateDuration = () => {
+                    if (startTime) {
+                        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                        const minutes = Math.floor(elapsed / 60);
+                        const seconds = elapsed % 60;
+                        duration.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    }
+                };
+                setInterval(updateDuration, 1000);
+
+            } catch (error) {
+                console.error('Error:', error);
+                status.textContent = 'Error accessing microphone';
+            }
+        });
+
+        document.getElementById('stopRecording').addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                recognition.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                
+                document.getElementById('startRecording').disabled = false;
+                document.getElementById('stopRecording').disabled = true;
+                status.textContent = 'Saving recording...';
+            }
+        });
     } else {
         bottomBar.innerHTML = `<div class="record-button" id="recordButton"></div>`;
         const recordButton = document.querySelector('.record-button');
