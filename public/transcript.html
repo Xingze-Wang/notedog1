@@ -6,13 +6,13 @@
 </head>
 <body class="transcript-page">
     <div class="status-bar">
-        <div id="time">16:59</div>
-        <div id="battery">100%</div>
+        <div id="time">--:--</div>
+        <div id="battery">---%</div>
     </div>
 
     <div class="header">
         <div class="top-icons">
-            <span class="icon"><a href="http://localhost:3000" class="back-button">Back</a></span>
+            <span class="icon"><a href="/" class="back-button">Back</a></span>
             <div class="right-icons">
                 <span>Bell</span>
                 <span>Profile</span>
@@ -37,15 +37,35 @@
     </div>
 
     <div class="tabs">
-        <div class="tab">Summary</div>
-        <div class="tab active">Transcript</div>
-        <div class="tab">Comments</div>
+        <div class="tab" data-tab="summary">Summary</div>
+        <div class="tab active" data-tab="transcript">Transcript</div>
+        <div class="tab" data-tab="comments">Comments</div>
     </div>
 
-    <div class="transcript-area"></div>
+    <div class="content-area">
+        <div id="summary-content" class="tab-content" style="display: none;">
+            <div class="summary-container">
+                <div class="summary-header">
+                    <h2>AI Summary</h2>
+                    <button id="regenerate-summary" class="icon-button">
+                        <span class="icon">🔄</span> Regenerate
+                    </button>
+                </div>
+                <div id="summary-text" class="summary-text">
+                    <div class="loading-placeholder">Generating summary...</div>
+                </div>
+            </div>
+        </div>
+        <div id="transcript-content" class="tab-content">
+            <div class="transcript-area"></div>
+        </div>
+        <div id="comments-content" class="tab-content" style="display: none;">
+            <div class="comments-placeholder">No comments yet</div>
+        </div>
+    </div>
 
     <div class="bottom-bar">
-        <div class="record-button" id="recordButton"></div>
+        <button class="record-button" id="recordButton">Start Recording</button>
     </div>
 
     <script src="common.js"></script>

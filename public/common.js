@@ -4,16 +4,28 @@ window.app = {
     recordingDuration: 0,
     batteryManager: null,
     
+    getApiUrl() {
+        // Always use HTTPS
+        return window.location.hostname === 'localhost' ? 'https://localhost:3000' : '';
+    },
+    
     async initializeCommon() {
         try {
-            await this.loadConfig();
-            await this.initializeBattery();
+            // Initialize time first (don't wait for config)
             this.updateTime();
-            this.updateCreatedTime();
-            
-            // Update time every second
             setInterval(() => this.updateTime(), 1000);
             
+            // Initialize battery (don't wait for config)
+            await this.initializeBattery();
+            
+            // Load config last (non-critical)
+            try {
+                await this.loadConfig();
+            } catch (error) {
+                console.warn('Config load failed, continuing with defaults:', error);
+            }
+            
+            this.updateCreatedTime();
             console.log('Common initialization complete');
         } catch (error) {
             console.error('Error in common initialization:', error);
@@ -22,7 +34,7 @@ window.app = {
 
     async loadConfig() {
         try {
-            const response = await fetch('/config');
+            const response = await fetch(`${this.getApiUrl()}/config`);
             if (!response.ok) {
                 throw new Error(`Config load failed: ${response.status}`);
             }
@@ -31,7 +43,13 @@ window.app = {
             console.log('Configuration loaded');
         } catch (error) {
             console.error('Error loading config:', error);
-            throw error;
+            // Use defaults instead
+            this.config = {
+                maxRecordingDuration: 300,
+                maxFileSize: '50mb',
+                supportedFormats: ['audio/wav'],
+                env: 'production'
+            };
         }
     },
 
@@ -89,19 +107,15 @@ window.app = {
     },
 
     updateCreatedTime() {
-        const elements = document.querySelectorAll('.note-meta');
-        elements.forEach(element => {
-            const text = element.textContent;
-            if (text.includes('•')) {
-                const now = new Date();
-                const timeStr = now.toLocaleTimeString('en-US', { 
-                    hour: '2-digit', 
-                    minute: '2-digit',
-                    hour12: false 
-                });
-                element.textContent = text.replace(/\d{1,2}:\d{2} [AP]M/, timeStr);
-            }
-        });
+        const createdTimeElement = document.getElementById('created-time');
+        if (createdTimeElement) {
+            const now = new Date();
+            createdTimeElement.textContent = now.toLocaleString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+        }
     },
 
     startRecording() {

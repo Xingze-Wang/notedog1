@@ -46,6 +46,35 @@ npm run dev
 
 ## Production Deployment
 
+### Railway Deployment
+
+1. Install Railway CLI:
+   ```bash
+   npm i -g @railway/cli
+   ```
+
+2. Login to Railway:
+   ```bash
+   railway login
+   ```
+
+3. Link your project:
+   ```bash
+   railway link
+   ```
+
+4. Set up environment variables on Railway:
+   - Go to your project on Railway
+   - Navigate to Variables
+   - Add all required variables from .env.example
+
+5. Deploy:
+   ```bash
+   railway up
+   ```
+
+### Manual Deployment
+
 1. Install PM2 globally:
    ```bash
    npm install -g pm2
