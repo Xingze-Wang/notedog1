@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Note Transcript</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -13,7 +12,7 @@
 
     <div class="header">
         <div class="top-icons">
-            <span class="icon"><a href="/" class="back-button">Back</a></span>
+            <span class="icon"><a href="http://localhost:3000" class="back-button">Back</a></span>
             <div class="right-icons">
                 <span>Bell</span>
                 <span>Profile</span>
@@ -30,16 +29,23 @@
     <div class="meta-info">
         <span>Created: <span id="created-time"></span></span>
         <span>Duration: <span id="duration">0:00</span></span>
+        <span>Xingze Wang</span>
     </div>
 
-    <div class="transcript-container">
-        <div id="live-transcript" class="live-transcript"></div>
-        <div id="final-transcript" class="final-transcript"></div>
+    <div class="chat-input">
+        Ask NoteDog or @mention people
     </div>
 
-    <div class="control-panel">
-        <button id="startRecording" class="record-button">Start Recording</button>
-        <button id="stopRecording" class="stop-button" disabled>Stop Recording</button>
+    <div class="tabs">
+        <div class="tab">Summary</div>
+        <div class="tab active">Transcript</div>
+        <div class="tab">Comments</div>
+    </div>
+
+    <div class="transcript-area"></div>
+
+    <div class="bottom-bar">
+        <div class="record-button" id="recordButton"></div>
     </div>
 
     <script src="common.js"></script>

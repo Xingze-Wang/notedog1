@@ -2,15 +2,18 @@ window.app = {
     config: {},
     startTime: null,
     recordingDuration: 0,
+    batteryManager: null,
     
     async initializeCommon() {
         try {
             await this.loadConfig();
+            await this.initializeBattery();
             this.updateTime();
-            this.updateBattery();
             this.updateCreatedTime();
+            
+            // Update time every second
             setInterval(() => this.updateTime(), 1000);
-            setInterval(() => this.updateBattery(), 30000);
+            
             console.log('Common initialization complete');
         } catch (error) {
             console.error('Error in common initialization:', error);
@@ -39,65 +42,93 @@ window.app = {
             timeElement.textContent = now.toLocaleTimeString('en-US', { 
                 hour: '2-digit', 
                 minute: '2-digit',
-                hour12: false 
+                hour12: false,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
             });
         }
     },
 
-    async updateBattery() {
-        if ('getBattery' in navigator) {
-            const battery = await navigator.getBattery();
+    async initializeBattery() {
+        try {
+            if ('getBattery' in navigator) {
+                this.batteryManager = await navigator.getBattery();
+                
+                // Initial battery update
+                this.updateBattery();
+
+                // Add battery event listeners
+                this.batteryManager.addEventListener('levelchange', () => this.updateBattery());
+                this.batteryManager.addEventListener('chargingchange', () => this.updateBattery());
+                
+                console.log('Battery monitoring initialized');
+            } else {
+                console.log('Battery API not supported');
+                const batteryElement = document.getElementById('battery');
+                if (batteryElement) {
+                    batteryElement.textContent = '100%';
+                }
+            }
+        } catch (error) {
+            console.error('Error initializing battery:', error);
             const batteryElement = document.getElementById('battery');
             if (batteryElement) {
-                batteryElement.textContent = `${Math.round(battery.level * 100)}%`;
+                batteryElement.textContent = '100%';
+            }
+        }
+    },
+
+    updateBattery() {
+        if (this.batteryManager) {
+            const batteryElement = document.getElementById('battery');
+            if (batteryElement) {
+                const level = Math.round(this.batteryManager.level * 100);
+                const charging = this.batteryManager.charging;
+                batteryElement.textContent = `${level}%${charging ? ' ⚡' : ''}`;
             }
         }
     },
 
     updateCreatedTime() {
-        const createdTimeElement = document.getElementById('created-time');
-        if (createdTimeElement) {
-            const now = new Date();
-            createdTimeElement.textContent = now.toLocaleString('en-US', {
-                weekday: 'short',
-                month: 'numeric',
-                day: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true
-            });
-        }
+        const elements = document.querySelectorAll('.note-meta');
+        elements.forEach(element => {
+            const text = element.textContent;
+            if (text.includes('•')) {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('en-US', { 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    hour12: false 
+                });
+                element.textContent = text.replace(/\d{1,2}:\d{2} [AP]M/, timeStr);
+            }
+        });
     },
 
     startRecording() {
         this.startTime = new Date();
+        this.recordingDuration = 0;
         this.updateDuration();
-        this.durationInterval = setInterval(() => this.updateDuration(), 1000);
     },
 
     stopRecording() {
-        if (this.durationInterval) {
-            clearInterval(this.durationInterval);
-        }
         this.startTime = null;
+        return this.recordingDuration;
     },
 
     updateDuration() {
-        if (!this.startTime) return;
-        
-        const now = new Date();
-        const duration = Math.floor((now - this.startTime) / 1000);
-        const hours = Math.floor(duration / 3600);
-        const minutes = Math.floor((duration % 3600) / 60);
-        const seconds = duration % 60;
-        
-        const durationElement = document.getElementById('duration');
-        if (durationElement) {
-            durationElement.textContent = hours > 0 
-                ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-                : `${minutes}:${String(seconds).padStart(2, '0')}`;
+        if (this.startTime) {
+            const now = new Date();
+            this.recordingDuration = Math.floor((now - this.startTime) / 1000);
+            
+            const durationElement = document.getElementById('duration');
+            if (durationElement) {
+                const minutes = Math.floor(this.recordingDuration / 60);
+                const seconds = this.recordingDuration % 60;
+                durationElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+
+            requestAnimationFrame(() => this.updateDuration());
         }
-        this.recordingDuration = duration;
     }
 };
 
