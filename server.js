@@ -509,17 +509,6 @@ app.get('/recordings/:id/audio', async (req, res, next) => {
     }
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.status(200).json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        memoryUsage: process.memoryUsage(),
-        environment: process.env.NODE_ENV
-    });
-});
-
 // Error handling middleware
 app.use((err, req, res, next) => {
     logger.error('Error:', err);
@@ -537,6 +526,17 @@ app.use((req, res) => {
     }
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    });
+});
+
 // Start server
 const startServer = async () => {
     try {
@@ -546,8 +546,8 @@ const startServer = async () => {
 
         // Test OpenAI connection
         const openAIConnected = await testOpenAIConnection();
-        if (!openAIConnected && process.env.NODE_ENV === 'production') {
-            logger.warn('OpenAI connection failed, but continuing startup in production');
+        if (!openAIConnected) {
+            throw new Error('Failed to connect to OpenAI');
         }
 
         // Create required directories
@@ -559,11 +559,27 @@ const startServer = async () => {
         }
 
         let server;
-        const port = process.env.PORT || config.port;
         
-        // In production (Railway), use regular HTTP
-        server = app.listen(port, '0.0.0.0', () => {
-            logger.info(`Server running on port ${port} in ${process.env.NODE_ENV || 'development'} mode`);
+        // Only use HTTPS in development
+        if (process.env.NODE_ENV === 'development') {
+            // Create certs directory if it doesn't exist
+            if (!fs.existsSync('certs')) {
+                fs.mkdirSync('certs', { recursive: true });
+            }
+            
+            const privateKey = fs.readFileSync(process.env.SSL_KEY_PATH || 'certs/server.key', 'utf8');
+            const certificate = fs.readFileSync(process.env.SSL_CERT_PATH || 'certs/server.crt', 'utf8');
+            const credentials = { key: privateKey, cert: certificate };
+            server = https.createServer(credentials, app);
+        } else {
+            server = require('http').createServer(app);
+        }
+        
+        server.listen(config.port, () => {
+            logger.info(`Server running in ${config.env} mode on port ${config.port}`);
+            if (process.env.NODE_ENV === 'development') {
+                logger.info(`Access the app at https://localhost:${config.port}`);
+            }
         });
 
         // Graceful shutdown
@@ -571,11 +587,7 @@ const startServer = async () => {
         process.on('SIGINT', () => shutdown('SIGINT', server));
     } catch (error) {
         logger.error('Failed to start server:', error);
-        if (process.env.NODE_ENV === 'production') {
-            logger.warn('Attempting to continue despite error in production');
-        } else {
-            process.exit(1);
-        }
+        process.exit(1);
     }
 };
 
