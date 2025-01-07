@@ -36,7 +36,7 @@ const config = {
 };
 
 // Validate critical environment variables
-const requiredEnvVars = ['MONGODB_URI'];
+const requiredEnvVars = ['MONGODB_URI', 'OPENAI_API_KEY'];
 for (const envVar of requiredEnvVars) {
     if (!process.env[envVar]) {
         logger.error(`Missing required environment variable: ${envVar}`);
@@ -50,6 +50,25 @@ const app = express();
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
+
+// Test OpenAI connectivity
+async function testOpenAIConnection() {
+    try {
+        const response = await openai.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [{ role: "user", content: "Test connection" }],
+            max_tokens: 5
+        });
+        if (response.choices && response.choices.length > 0) {
+            logger.info('OpenAI connection test successful');
+            return true;
+        }
+        throw new Error('Invalid response format');
+    } catch (error) {
+        logger.error('OpenAI connection test failed:', error);
+        return false;
+    }
+}
 
 // MongoDB connection with proper error handling and retry logic
 async function connectDB(retries = 5, delay = 5000) {
@@ -365,8 +384,14 @@ app.get('/recordings/:id/summary', summaryLimiter, async (req, res, next) => {
             return res.json({ content: recording.summary });
         }
 
+        // Check if transcript is available
+        if (!recording.transcript) {
+            logger.info(`No transcript available yet for ${req.params.id}`);
+            return res.json({ content: "The transcript is not ready yet. Please wait a few moments and try again." });
+        }
+
         // Always send to GPT, with transcript if available
-        const transcript = recording.transcript ? String(recording.transcript).trim() : "No transcript available yet";
+        const transcript = String(recording.transcript).trim();
         const maxChars = 4000;
         const truncatedTranscript = transcript.length > maxChars ? 
             transcript.slice(0, maxChars) + '...' : 
@@ -386,9 +411,6 @@ app.get('/recordings/:id/summary', summaryLimiter, async (req, res, next) => {
                         { 
                             role: "system", 
                             content: `You are a professional transcription summarizer. Your task is to create a clear, structured summary of spoken content.
-
-If there is no transcript available yet, respond with:
-"The transcript is not ready yet. Please wait a few moments and try again."
 
 For available transcripts, organize your summary into these sections:
 1. Main Topic: A one-line description of what the conversation is about
@@ -418,17 +440,20 @@ Use clear, concise language and maintain the original context and meaning.`
                 return res.json({ content: summary });
             } catch (err) {
                 lastError = err;
+                logger.error(`OpenAI error attempt ${attempts + 1}:`, err);
                 attempts++;
                 if (attempts < maxAttempts) {
-                    logger.warn(`OpenAI attempt ${attempts} failed, retrying...`, err);
+                    logger.warn(`Retrying in ${attempts} seconds...`);
                     await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
                 }
             }
         }
 
         // If we get here, all attempts failed
-        throw createError(500, 'Failed to generate summary');
+        logger.error('All OpenAI attempts failed:', lastError);
+        throw createError(500, 'Failed to generate summary after multiple attempts');
     } catch (err) {
+        logger.error('Summary generation error:', err);
         next(err);
     }
 });
@@ -513,32 +538,65 @@ app.get('/health', (req, res) => {
 });
 
 // Start server
-const port = config.port;
+const startServer = async () => {
+    try {
+        // Test database connection
+        await connectDB();
+        logger.info('MongoDB connected successfully');
 
-// Start server with database connection
-connectDB().then(() => {
-    // Create HTTPS server
-    const httpsOptions = {
-        key: fs.readFileSync(path.join(__dirname, 'certs/server.key')),
-        cert: fs.readFileSync(path.join(__dirname, 'certs/server.crt'))
-    };
-    
-    const server = https.createServer(httpsOptions, app);
-    
-    server.listen(port, () => {
-        logger.info(`Server running on port ${port}`);
-        logger.info(`Access the app at https://localhost:${port}`);
-    });
-}).catch(err => {
-    logger.error('Failed to start server:', err);
-    process.exit(1);
-});
+        // Test OpenAI connection
+        const openAIConnected = await testOpenAIConnection();
+        if (!openAIConnected) {
+            throw new Error('Failed to connect to OpenAI');
+        }
+
+        // Create required directories
+        const dirs = ['uploads', 'logs'];
+        for (const dir of dirs) {
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+        }
+
+        let server;
+        
+        // In production (Railway), use regular HTTP as SSL is handled by the platform
+        if (process.env.RAILWAY_STATIC_URL || process.env.NODE_ENV === 'production') {
+            server = app.listen(config.port, '0.0.0.0', () => {
+                logger.info(`Server running in production mode on port ${config.port}`);
+            });
+        } else {
+            // In development, use HTTPS
+            if (!fs.existsSync('certs')) {
+                fs.mkdirSync('certs', { recursive: true });
+            }
+            
+            const privateKey = fs.readFileSync(process.env.SSL_KEY_PATH || 'certs/server.key', 'utf8');
+            const certificate = fs.readFileSync(process.env.SSL_CERT_PATH || 'certs/server.crt', 'utf8');
+            const credentials = { key: privateKey, cert: certificate };
+
+            server = https.createServer(credentials, app);
+            server.listen(config.port, () => {
+                logger.info(`Server running in development mode on port ${config.port}`);
+            });
+        }
+
+        // Graceful shutdown
+        process.on('SIGTERM', () => shutdown('SIGTERM', server));
+        process.on('SIGINT', () => shutdown('SIGINT', server));
+    } catch (error) {
+        logger.error('Failed to start server:', error);
+        process.exit(1);
+    }
+};
+
+startServer();
 
 // Graceful shutdown handling
-async function shutdown(signal) {
+async function shutdown(signal, server) {
     logger.info(`${signal} signal received. Starting graceful shutdown...`);
     
-    app.close(async () => {
+    server.close(async () => {
         logger.info('HTTP server closed');
         
         try {
@@ -560,9 +618,6 @@ async function shutdown(signal) {
         process.exit(1);
     }, 10000);
 }
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Unhandled rejection handling
 process.on('unhandledRejection', (reason, promise) => {
