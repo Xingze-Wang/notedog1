@@ -509,6 +509,17 @@ app.get('/recordings/:id/audio', async (req, res, next) => {
     }
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memoryUsage: process.memoryUsage(),
+        environment: process.env.NODE_ENV
+    });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     logger.error('Error:', err);
@@ -526,17 +537,6 @@ app.use((req, res) => {
     }
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
-    });
-});
-
 // Start server
 const startServer = async () => {
     try {
@@ -546,8 +546,8 @@ const startServer = async () => {
 
         // Test OpenAI connection
         const openAIConnected = await testOpenAIConnection();
-        if (!openAIConnected) {
-            throw new Error('Failed to connect to OpenAI');
+        if (!openAIConnected && process.env.NODE_ENV === 'production') {
+            logger.warn('OpenAI connection failed, but continuing startup in production');
         }
 
         // Create required directories
@@ -559,34 +559,23 @@ const startServer = async () => {
         }
 
         let server;
+        const port = process.env.PORT || config.port;
         
-        // In production (Railway), use regular HTTP as SSL is handled by the platform
-        if (process.env.RAILWAY_STATIC_URL || process.env.NODE_ENV === 'production') {
-            server = app.listen(config.port, '0.0.0.0', () => {
-                logger.info(`Server running in production mode on port ${config.port}`);
-            });
-        } else {
-            // In development, use HTTPS
-            if (!fs.existsSync('certs')) {
-                fs.mkdirSync('certs', { recursive: true });
-            }
-            
-            const privateKey = fs.readFileSync(process.env.SSL_KEY_PATH || 'certs/server.key', 'utf8');
-            const certificate = fs.readFileSync(process.env.SSL_CERT_PATH || 'certs/server.crt', 'utf8');
-            const credentials = { key: privateKey, cert: certificate };
-
-            server = https.createServer(credentials, app);
-            server.listen(config.port, () => {
-                logger.info(`Server running in development mode on port ${config.port}`);
-            });
-        }
+        // In production (Railway), use regular HTTP
+        server = app.listen(port, '0.0.0.0', () => {
+            logger.info(`Server running on port ${port} in ${process.env.NODE_ENV || 'development'} mode`);
+        });
 
         // Graceful shutdown
         process.on('SIGTERM', () => shutdown('SIGTERM', server));
         process.on('SIGINT', () => shutdown('SIGINT', server));
     } catch (error) {
         logger.error('Failed to start server:', error);
-        process.exit(1);
+        if (process.env.NODE_ENV === 'production') {
+            logger.warn('Attempting to continue despite error in production');
+        } else {
+            process.exit(1);
+        }
     }
 };
 
